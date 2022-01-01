@@ -10,7 +10,8 @@ class RoboFile extends \Robo\Tasks
     use DocumentationHelpers;
 
     const REPO_BLOB_URL = 'https://github.com/Codeception/Codeception/blob';
-    const STABLE_BRANCH = '4.1';
+    const BRANCH_4x = '4.1';
+    const BRANCH_CURRENT = '5.0';
 
     function post()
     {
@@ -322,7 +323,7 @@ EOF;
             ->prepend("# Official Extensions\n")
             ->processClassSignature(function (ReflectionClass $r, $text) {
                 $name = $r->getShortName();
-                return "## $name\n\n[See Source](" . self::REPO_BLOB_URL . "/" . self::STABLE_BRANCH . "/ext/$name.php)";
+                return "## $name\n\n[See Source](" . self::REPO_BLOB_URL . "/" . self::BRANCH_CURRENT . "/ext/$name.php)";
             })
             ->filterMethods(function (ReflectionMethod $r) {
                 return false;
@@ -336,7 +337,7 @@ EOF;
     protected function documentApiClass($file, $className, $all = false, $repositoryName = null)
     {
         if ($repositoryName === null) {
-            $repositoryUrl = self::REPO_BLOB_URL . "/" . self::STABLE_BRANCH;
+            $repositoryUrl = self::REPO_BLOB_URL . "/" . self::BRANCH_CURRENT;
         } else {
             $repositoryUrl = 'https://github.com/Codeception/' . $repositoryName . '/blob/master';
         }
@@ -471,9 +472,31 @@ EOF;
         file_put_contents($documentationFile, $contents);
     }
 
+    public function buildPhar74()
+    {
+        $version    = self::BRANCH_CURRENT . '.' . date('Ymd');
+        $releaseDir = "releases/$version";
+        $this->stopOnFail();
+
+        $this->taskFilesystemStack()->mkdir('build/74')->run();
+        $this->setPlatformVersionTo('7.4.0');
+        $this->setCodeceptionVersionTo('5.0.x');
+        $buildFile = 'build/74/codecept.phar';
+        $this->buildPhar($buildFile);
+        $this->updateVersionFile($buildFile, 'php74/codecept.version');
+        $versionedFile = "$releaseDir/codecept.phar";
+        $this->taskFilesystemStack()
+            ->stopOnFail()
+            ->mkdir($releaseDir)
+            ->copy($buildFile, $versionedFile)
+            ->remove('php74/codecept.phar')
+            ->symlink($versionedFile, 'php74/codecept.phar')
+            ->run();
+    }
+
     public function buildPhar72()
     {
-        $version    = self::STABLE_BRANCH . '.' . date('Ymd');
+        $version    = self::BRANCH_4x . '.' . date('Ymd');
         $releaseDir = "releases/$version";
         $this->stopOnFail();
 
@@ -494,7 +517,7 @@ EOF;
 
     public function buildPhar56()
     {
-        $version    = self::STABLE_BRANCH . '.' . date('Ymd');
+        $version    = self::BRANCH_4x . '.' . date('Ymd');
         $releaseDir = "releases/$version";
         $this->stopOnFail();
 
@@ -522,7 +545,7 @@ EOF;
 
     public function release()
     {
-        $version    = self::STABLE_BRANCH . '.' . date('Ymd');
+        $version    = self::BRANCH_4x . '.' . date('Ymd');
         $releaseDir = "releases/$version";
         $this->updateBuildsPage();
 
@@ -538,10 +561,31 @@ EOF;
             ->run();
     }
 
+    public function release74()
+    {
+        $version    = self::BRANCH_CURRENT . '.' . date('Ymd');
+        $releaseDir = "releases/$version";
+        $this->updateBuildsPage();
+
+        $this->taskGitStack()
+            ->stopOnFail()
+            ->checkout('-- package/composer.json')
+            ->add('builds.markdown')
+            ->add('php74/codecept.phar')
+            ->add('php74/codecept.version')
+            ->add($releaseDir)
+            ->run();
+    }
+
     private function setPlatformVersionTo($version)
     {
         $this->taskComposerConfig()->workingDir('package')->set('platform.php', $version)->run();
         $this->taskComposerUpdate()->preferDist()->optimizeAutoloader()->workingDir('package')->run();
+    }
+
+    private function setCodeceptionVersionTo($version)
+    {
+        $this->taskComposerRequire()->dependency('codeception/codeception', $version)->run();
     }
 
     /**
@@ -701,8 +745,10 @@ EOF;
                     $releaseFile->line("*Requires: PHP 5.3 and higher + CURL*\n");
                 } elseif ($major == 2 && $minor < 4) {
                     $releaseFile->line("*Requires: PHP 5.4 and higher + CURL*\n");
-                } else {
+                } elseif ($major < 5) {
                     $releaseFile->line("*Requires: PHP 5.6 and higher + CURL*\n");
+                } else {
+                    $releaseFile->line("*Requires: PHP 7.4 and higher + CURL*\n");
                 }
                 $releaseFile->line("* **[Download Latest $branch Release]($downloadUrl)**");
             }
